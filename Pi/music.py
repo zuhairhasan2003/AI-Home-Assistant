@@ -55,7 +55,8 @@ while True:
 
 	if(current_song_player != None):
 		current_song_player.stop()
-
+	
+	print(raw_json)
 	json_obj = gemeni_api_req(json.loads(raw_json.decode()))
 
 	if(json_obj == None):
