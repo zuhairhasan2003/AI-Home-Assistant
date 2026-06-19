@@ -8,6 +8,7 @@
 #include<netinet/in.h>
 #include <pthread.h>
 #include <semaphore.h>
+#include<cjson/cJSON.h>
 #include "./CustomLibs/LinkedList.h"
 
 sem_t MusicThreadSem;
@@ -33,10 +34,15 @@ void* ControllerThreadFunc(void*)
         int new_socket = accept(server_fd, (struct sockaddr*)&address, &addrlen);
         char data[1024] = {0};
         read(new_socket, data, 1024 - 1); 
-        close(new_socket);
 
-        push(&MusicLinkedList, data);
-        sem_post(&MusicThreadSem);
+        cJSON *parsed_json = cJSON_Parse(data);
+
+        // send to music queue if the command is related to music operation
+        if (strcmp(cJSON_GetObjectItemCaseSensitive(parsed_json, "service")->valuestring, "music") == 0)
+        {
+            push(&MusicLinkedList, data);
+            sem_post(&MusicThreadSem);
+        }
     }
 }
 

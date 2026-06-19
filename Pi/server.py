@@ -3,9 +3,7 @@ import whisper
 import tempfile
 import os
 import json
-import ollama
 import socket
-import re
 
 app = Flask(__name__)
 
@@ -24,77 +22,52 @@ def transcribe_audio(file_path: str) -> str:
 
 
 # ----------------------------
-# OLLAMA INTENT PARSER
+# RULE-BASED INTENT PARSER
 # ----------------------------
 def parse_intent(transcript: str):
+    text = transcript.lower().strip()
 
-    prompt = f"""
-You are a strict JSON generator for a home assistant system.
-
-RULES:
-- Output ONLY valid JSON
-- No markdown
-- No explanations
-- No extra text
-
-FORMAT:
-{{
-  "user_input": "{transcript}",
-  "operation": "<play | pause | stop | next | turn_on | turn_off | volume | unknown>",
-  "service": "<music | lights | tv | system | unknown>"
-}}
-
-INPUT:
-{transcript}
-"""
-
-    response = ollama.chat(
-        model="gemma2:2b",
-        messages=[
-            {"role": "user", "content": prompt}
-        ]
-    )
-
-    raw = response["message"]["content"].strip()
-
-    # ----------------------------
-    # DEBUG OUTPUT
-    # ----------------------------
-    print("\n===== RAW OLLAMA OUTPUT =====")
-    print(raw)
-    print("============================\n")
-
-    # ----------------------------
-    # JSON PARSING
-    # ----------------------------
-    try:
-        parsed = json.loads(raw)
-
-        print("\n===== PARSED JSON =====")
-        print(parsed)
-        print("======================\n")
-
-        return parsed
-
-    except json.JSONDecodeError:
-        # fallback: extract JSON from messy output
-        match = re.search(r"\{.*\}", raw, re.S)
-        if match:
-            try:
-                parsed = json.loads(match.group())
-                print("\n===== FIXED JSON =====")
-                print(parsed)
-                print("======================\n")
-                return parsed
-            except:
-                pass
-
-    # final fallback
-    return {
+    intent = {
         "user_input": transcript,
         "operation": "unknown",
-        "service": "unknown"
+        "service": "unknown",
+        "parameter": None
     }
+
+    # ----------------------------
+    # SERVICE DETECTION
+    # ----------------------------
+    music_keywords = ["play", "song", "music", "track", "album", "listen"]
+    light_keywords = ["light", "lights", "lamp", "room"]
+
+    if any(word in text for word in music_keywords):
+        intent["service"] = "music"
+    elif any(word in text for word in light_keywords):
+        intent["service"] = "lights"
+
+    # ----------------------------
+    # MUSIC OPERATIONS
+    # ----------------------------
+    if intent["service"] == "music":
+
+        if any(word in text for word in ["stop", "end", "shut"]):
+            intent["operation"] = "stop"
+
+        elif any(word in text for word in ["play", "start"]):
+            intent["operation"] = "play"
+
+    # ----------------------------
+    # LIGHT OPERATIONS
+    # ----------------------------
+    elif intent["service"] == "lights":
+
+        if any(word in text for word in ["on", "turn on", "switch on"]):
+            intent["operation"] = "turn_on"
+
+        elif any(word in text for word in ["off", "turn off", "switch off"]):
+            intent["operation"] = "turn_off"
+
+    return intent
 
 
 # ----------------------------
@@ -108,7 +81,6 @@ def send_to_controller(data: dict):
 
         message = json.dumps(data) + "\n"
         s.sendall(message.encode())
-
         s.close()
 
         print("\n===== SENT TO CONTROLLER =====")
@@ -134,15 +106,18 @@ def voice():
         transcript = transcribe_audio(tmp.name)
         print("\nTranscript:", transcript)
 
-        # STEP 2: Ollama → JSON intent
+        # STEP 2: Rule-based intent parser
         intent = parse_intent(transcript)
 
-        # STEP 3: Send to C controller
+        print("\n===== INTENT =====")
+        print(intent)
+        print("==================\n")
+
+        # STEP 3: Send to controller
         send_to_controller(intent)
 
     os.remove(tmp.name)
 
-    # return result to browser
     return intent
 
 

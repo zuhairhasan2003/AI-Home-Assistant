@@ -22,10 +22,13 @@ def gemeni_api_req(raw_json):
 	* If no reliable match exists, return null for song_name and singer_name.
 	* confidence must be 0-1 and reflect confidence in the match.
 	* No explanations or extra text.
+
+	IF the user asks you to pick a song, then please suggest them the song
+
 	Input: """ + raw_json['user_input']
 
 	response = client.models.generate_content(
-		model="gemini-3.5-flash",
+		model="gemini-3.1-flash-lite",
 		contents=prompt)
 
 	try:
@@ -57,41 +60,52 @@ while True:
 		current_song_player.stop()
 	
 	print(raw_json)
-	json_obj = gemeni_api_req(json.loads(raw_json.decode()))
 
-	if(json_obj == None):
-		continue
+	if(json.loads(raw_json.decode())['operation'] == 'play'):
 
-	song_name = f"{json_obj['song_name']} - {json_obj['singer_name']}" if json_obj.get("singer_name") else json_obj["song_name"]
+		json_obj = gemeni_api_req(json.loads(raw_json.decode()))
 
-	request = youtube.search().list(
-		q=song_name,
-		part='snippet',
-		maxResults=1
-		)
+		print(json_obj)
+		
+		if(json_obj is None):
+			pass
 
-	response = request.execute()
+		if json_obj.get("singer_name"):
+			song_name = f"{json_obj['song_name']} - {json_obj['singer_name']}"
+		else:
+			song_name = json_obj["song_name"]
 
-	if not response['items']:
-		continue
+		request = youtube.search().list(
+			q=song_name,
+			part='snippet',
+			maxResults=1
+			)
 
-	url = f"https://www.youtube.com/watch?v={response['items'][0]['id']['videoId']}"
+		response = request.execute()
 
-	ydl_opts = { 'format': 'best', 'quiet': True, }
+		if not response['items']:
+			continue
 
-	with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-		info = ydl.extract_info(url, download=False)
-		video_url = info['url']
-		title = info['title']
+		url = f"https://www.youtube.com/watch?v={response['items'][0]['id']['videoId']}"
 
-	instance = vlc.Instance(
-		"--intf", "dummy",
-    		"--no-video",
-    		"--quiet",
-    		"--no-osd",
-    		"--verbose", "0")
+		ydl_opts = { 'format': 'best', 'quiet': True, }
 
-	player = instance.media_player_new()
-	player.set_mrl(video_url)
-	player.play()
-	current_song_player = player
+		with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+			info = ydl.extract_info(url, download=False)
+			video_url = info['url']
+			title = info['title']
+
+		instance = vlc.Instance(
+			"--intf", "dummy",
+				"--no-video",
+				"--quiet",
+				"--no-osd",
+				"--verbose", "0")
+
+		player = instance.media_player_new()
+		player.set_mrl(video_url)
+		player.play()
+		current_song_player = player
+
+	elif(json.loads(raw_json.decode())['operation'] == 'stop'):
+		player.stop()
