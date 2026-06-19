@@ -1,0 +1,4 @@
+Pi/venv/
+Pi/__pycache__/
+Pi/*.pyc
+Pi/controller
