@@ -2,11 +2,13 @@
 #include<stdio.h>
 #include<stdlib.h>
 #include<string.h>
+#include <pthread.h>
 
 void ll_init(struct LinkedList * ll)
 {
     ll->head = NULL;
     ll->tail = NULL;
+    pthread_mutex_init(&ll->lock, NULL);
 }
 
 void push(struct LinkedList * ll, char data[1024]) // push data at the end

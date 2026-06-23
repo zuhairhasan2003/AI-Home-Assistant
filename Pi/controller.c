@@ -40,7 +40,10 @@ void* ControllerThreadFunc(void*)
         // send to music queue if the command is related to music operation
         if (strcmp(cJSON_GetObjectItemCaseSensitive(parsed_json, "service")->valuestring, "music") == 0)
         {
+            pthread_mutex_lock(&MusicLinkedList.lock);
             push(&MusicLinkedList, data);
+            pthread_mutex_unlock(&MusicLinkedList.lock);
+
             sem_post(&MusicThreadSem);
         }
     }
@@ -74,11 +77,13 @@ void* MusicThreadFunc(void*)
     {   
         sem_wait(&MusicThreadSem);
 
+        pthread_mutex_lock(&MusicLinkedList.lock);
         struct Node* node = pop(&MusicLinkedList);
         if(node != NULL) {
             send(client_fd, node->data, strlen(node->data), 0);
             free(node);
         }
+        pthread_mutex_unlock(&MusicLinkedList.lock);
     }
 }
 
