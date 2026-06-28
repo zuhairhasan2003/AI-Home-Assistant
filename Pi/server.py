@@ -37,8 +37,8 @@ def parse_intent(transcript: str):
     # ----------------------------
     # SERVICE DETECTION
     # ----------------------------
-    music_keywords = ["play", "song", "music", "track", "album", "listen"]
-    light_keywords = ["light", "lights", "lamp", "room"]
+    music_keywords = ["play", "song", "music", "track", "album", "listen", "put on", "play some", "listen to"]
+    light_keywords = ["light", "lights", "lamp", "bulb"]
 
     if any(word in text for word in music_keywords):
         intent["service"] = "music"
@@ -61,10 +61,10 @@ def parse_intent(transcript: str):
     # ----------------------------
     elif intent["service"] == "lights":
 
-        if any(word in text for word in ["on", "turn on", "switch on"]):
+        if any(word in text for word in ["onn", "on", "turn on", "switch on"]):
             intent["operation"] = "turn_on"
 
-        elif any(word in text for word in ["off", "turn off", "switch off"]):
+        elif any(word in text for word in ["of", "off", "turn off", "switch off"]):
             intent["operation"] = "turn_off"
 
     return intent

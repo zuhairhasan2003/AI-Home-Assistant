@@ -14,6 +14,9 @@
 sem_t MusicThreadSem;
 struct LinkedList MusicLinkedList;
 
+sem_t LightThreadSem;
+struct LinkedList LightLinkedList;
+
 void* ControllerThreadFunc(void*)
 {
     int server_fd;
@@ -45,6 +48,15 @@ void* ControllerThreadFunc(void*)
             pthread_mutex_unlock(&MusicLinkedList.lock);
 
             sem_post(&MusicThreadSem);
+        }
+        // send to light queue if the command is related to light operation
+        else if(strcmp(cJSON_GetObjectItemCaseSensitive(parsed_json, "service")->valuestring, "lights") == 0)
+        {
+            pthread_mutex_lock(&LightLinkedList.lock);
+            push(&LightLinkedList, data);
+            pthread_mutex_unlock(&LightLinkedList.lock);
+
+            sem_post(&LightThreadSem);
         }
     }
 }
@@ -87,19 +99,66 @@ void* MusicThreadFunc(void*)
     }
 }
 
+void* LightThreadFunc(void*)
+{
+    int server_fd;
+    struct sockaddr_un address;
+    
+    // setup server file descriptor
+    server_fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    
+    // remove the socket file if it already exists
+    unlink("/tmp/lights.sock");
+    
+    // bind the socket to the address "tmp/lights.sock"
+    memset(&address, 0, sizeof(address));
+    address.sun_family = AF_UNIX;
+    strcpy(address.sun_path, "/tmp/lights.sock");
+    
+    bind(server_fd, (struct sockaddr*)&address, sizeof(address));
+    
+    // listen for incoming connections
+    listen(server_fd, 1);
+
+    // accept a connection from a client
+    int client_fd = accept(server_fd, NULL, NULL);
+
+    while(1)
+    {
+        sem_wait(&LightThreadSem);
+        pthread_mutex_lock(&LightLinkedList.lock);
+        struct Node* node = pop(&LightLinkedList);
+        if(node != NULL) {
+            // send(client_fd, node->data, strlen(node->data), 0);
+            // free(node);
+
+            // send data to light module
+            printf("Light Command found!!!\n");
+        }
+        pthread_mutex_unlock(&LightLinkedList.lock);
+    }
+}
+
 int main()
 {
     sem_init(&MusicThreadSem, 0, 0);
     ll_init(&MusicLinkedList);
 
+    sem_init(&LightThreadSem, 0, 0);
+    ll_init(&LightLinkedList);
+
     pthread_t musicThread;
     pthread_create(&musicThread, NULL, MusicThreadFunc, NULL);
+
+    pthread_t lightThread;
+    pthread_create(&lightThread, NULL, LightThreadFunc, NULL);
 
     pthread_t controllerThread;
     pthread_create(&controllerThread, NULL, ControllerThreadFunc, NULL);
 
 
     pthread_join(musicThread, NULL);
+    pthread_join(lightThread, NULL);
     pthread_join(controllerThread, NULL);
     
     return 0;
