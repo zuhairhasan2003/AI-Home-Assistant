@@ -129,11 +129,8 @@ void* LightThreadFunc(void*)
         pthread_mutex_lock(&LightLinkedList.lock);
         struct Node* node = pop(&LightLinkedList);
         if(node != NULL) {
-            // send(client_fd, node->data, strlen(node->data), 0);
-            // free(node);
-
-            // send data to light module
-            printf("Light Command found!!!\n");
+            send(client_fd, node->data, strlen(node->data), 0);
+            free(node);
         }
         pthread_mutex_unlock(&LightLinkedList.lock);
     }
