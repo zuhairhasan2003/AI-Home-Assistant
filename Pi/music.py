@@ -23,12 +23,12 @@ def gemeni_api_req(raw_json):
 	* confidence must be 0-1 and reflect confidence in the match.
 	* No explanations or extra text.
 
-	IF the user asks you to pick a song, then please suggest them the song
+	IF the user asks you to pick a song, then please SUGGEST them the song
 
 	Input: """ + raw_json['user_input']
 
 	response = client.models.generate_content(
-		model="gemini-3.1-flash-lite",
+		model="gemini-3.5-flash-lite",
 		contents=prompt)
 
 	try:
@@ -41,71 +41,93 @@ def gemeni_api_req(raw_json):
 
 	return None
 
-
-while not os.path.exists("/tmp/music.sock"):
-    time.sleep(1)
-    print("MUSIC PLAYER - Waiting for server...")
-
-sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-sock.connect("/tmp/music.sock")
-
 YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
 youtube = build('youtube', 'v3', developerKey=YOUTUBE_API_KEY)
 current_song_player = None
 
+print("MUSIC PLAYER - starting...", flush=True)
+
 while True:
-	raw_json = sock.recv(1024)
 
-	if(current_song_player != None):
-		current_song_player.stop()
+	while True:
+		try:
+			sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+			sock.connect("/tmp/music.sock")
+			print("MUSIC PLAYER - connected to controller...", flush=True)
+			break
+		except (FileNotFoundError, ConnectionRefusedError):
+			print("MUSIC PLAYER - waiting for controller...", flush=True)
+			time.sleep(1)
 	
-	print(raw_json)
+	while True:
+		raw_json = sock.recv(1024)
 
-	if(json.loads(raw_json.decode())['operation'] == 'play'):
+		if not raw_json:
+			break
 
-		json_obj = gemeni_api_req(json.loads(raw_json.decode()))
+		print(raw_json, flush=True)
 
-		print(json_obj)
-		
-		if(json_obj is None):
-			pass
+		if(current_song_player != None):
+			current_song_player.stop()
 
-		if json_obj.get("singer_name"):
-			song_name = f"{json_obj['song_name']} - {json_obj['singer_name']}"
-		else:
-			song_name = json_obj["song_name"]
+		if(json.loads(raw_json.decode())['operation'] == 'play'):
 
-		request = youtube.search().list(
-			q=song_name,
-			part='snippet',
-			maxResults=1
-			)
+			json_obj = gemeni_api_req(json.loads(raw_json.decode()))
 
-		response = request.execute()
+			print(json_obj, flush=True)
+			
+			if(json_obj is None):
+				continue
 
-		if not response['items']:
-			continue
+			if json_obj.get("singer_name"):
+				song_name = f"{json_obj['song_name']} - {json_obj['singer_name']}"
+			else:
+				song_name = json_obj["song_name"]
 
-		url = f"https://www.youtube.com/watch?v={response['items'][0]['id']['videoId']}"
+			request = youtube.search().list(
+				q=song_name,
+				part='snippet',
+				maxResults=1
+				)
 
-		ydl_opts = { 'format': 'best', 'quiet': True, }
+			response = request.execute()
 
-		with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-			info = ydl.extract_info(url, download=False)
-			video_url = info['url']
-			title = info['title']
+			if not response['items']:
+				continue
 
-		instance = vlc.Instance(
-			"--intf", "dummy",
-				"--no-video",
-				"--quiet",
-				"--no-osd",
-				"--verbose", "0")
+			url = f"https://www.youtube.com/watch?v={response['items'][0]['id']['videoId']}"
 
-		player = instance.media_player_new()
-		player.set_mrl(video_url)
-		player.play()
-		current_song_player = player
+			ydl_opts = {
+				'format': 'bestaudio/best',
+				'noplaylist': True,
+				'js_runtimes': {
+					'node': {}
+				},
+				'extractor_args': {
+					'youtube': {
+						'player_client': ['default', 'web_embedded', '-android_vr']
+					}
+				},
+			}
 
-	elif(json.loads(raw_json.decode())['operation'] == 'stop'):
-		player.stop()
+			with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+				info = ydl.extract_info(url, download=False)
+				video_url = info['url']
+				title = info['title']
+
+			instance = vlc.Instance(
+				"--intf", "dummy",
+					"--no-video",
+					"--quiet",
+					"--no-osd",
+					"--verbose", "0")
+
+			player = instance.media_player_new()
+			player.set_mrl(video_url)
+			player.play()
+			current_song_player = player
+
+		elif(json.loads(raw_json.decode())['operation'] == 'stop'):
+			player.stop()
+
+	sock.close()

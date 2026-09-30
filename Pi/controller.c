@@ -1,14 +1,14 @@
-#include<stdio.h>
-#include<stdlib.h>
-#include<unistd.h>
-#include<string.h>
-#include<sys/socket.h>
-#include<sys/types.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <sys/types.h>
 #include <sys/un.h>
-#include<netinet/in.h>
+#include <netinet/in.h>
 #include <pthread.h>
 #include <semaphore.h>
-#include<cjson/cJSON.h>
+#include <cjson/cJSON.h>
 #include "./CustomLibs/LinkedList.h"
 
 sem_t MusicThreadSem;
@@ -44,6 +44,7 @@ void* ControllerThreadFunc(void*)
         if (strcmp(cJSON_GetObjectItemCaseSensitive(parsed_json, "service")->valuestring, "music") == 0)
         {
             pthread_mutex_lock(&MusicLinkedList.lock);
+            printf("CONTROLLER - routing request to music process\n");
             push(&MusicLinkedList, data);
             pthread_mutex_unlock(&MusicLinkedList.lock);
 
