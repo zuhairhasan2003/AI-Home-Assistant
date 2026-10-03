@@ -4,6 +4,9 @@ import tempfile
 import os
 import json
 import socket
+import onnxruntime as ort
+import numpy as np
+from transformers import AutoTokenizer
 
 app = Flask(__name__)
 
@@ -12,6 +15,121 @@ app = Flask(__name__)
 # ----------------------------
 model = whisper.load_model("base")
 
+# ----------------------------
+# Load ONNX model
+# ----------------------------
+onnx_model = ort.InferenceSession("minilm-onnx/model.onnx")
+# Load tokenizer
+tokenizer = AutoTokenizer.from_pretrained(
+    "sentence-transformers/all-MiniLM-L6-v2"
+)
+
+def embed(text):
+    # Convert text into tokens
+    inputs = tokenizer(
+        text,
+        return_tensors="np",
+        padding=True,
+        truncation=True
+    )
+
+    # ONNX model only expects these two inputs
+    inputs = {
+        "input_ids": inputs["input_ids"],
+        "attention_mask": inputs["attention_mask"]
+    }
+
+    # Run ONNX model
+    outputs = onnx_model.run(None, inputs)
+
+    # Token embeddings
+    embeddings = outputs[0]
+
+    # Mean pooling
+    mask = inputs["attention_mask"][..., None]
+
+    embedding = (embeddings * mask).sum(axis=1) / mask.sum(axis=1)
+
+    # Normalize
+    embedding /= np.linalg.norm(
+        embedding,
+        axis=1,
+        keepdims=True
+    )
+
+    return embedding[0]
+
+# Things we want to classify against
+service_descriptions = {
+    "lights": """
+    This is a smart home lighting command.
+
+    The user wants to control a light, lamp, bulb, or room lighting.
+    The user may want to turn a light on or off.
+    The user may want to switch the lights on or off.
+    The user may want to control the lighting in a room.
+    The user may be talking about the bedroom light, living room light,
+    kitchen light, hallway light, or another light in the home.
+
+    Examples:
+    Turn on the lights.
+    Turn off the lights.
+    Switch the lights on.
+    Switch the lights off.
+    Turn the bedroom light on.
+    Turn the living room lamp off.
+    Can you turn the light on?
+    Can you turn the light off?
+    Please switch the lamp on.
+    Please switch the lamp off.
+    The room is too dark.
+    Make the room brighter.
+    I need some light in here.
+    Turn on the lamp.
+    Turn off the lamp.
+    Switch on the bedroom lights.
+    Switch off the living room lights.
+    """,
+
+    "music": """
+    This is a smart home music player command.
+
+    The user wants to control music, songs, tracks, albums, audio,
+    or music playback.
+    The user may want to start playing music.
+    The user may want to stop or pause music.
+    The user may want to listen to a song or start the music player.
+
+    Examples:
+    Play some music.
+    Play a song.
+    Start the music.
+    Start playing music.
+    Stop the music.
+    Stop playing.
+    Please stop the music.
+    Can you please stop?
+    Pause the music.
+    Pause what is playing.
+    Stop the song.
+    End the music.
+    Put some music on.
+    I'd like to listen to some music.
+    Play a track.
+    Play an album.
+    I want to listen to music.
+    Turn the music on.
+    Turn the music off.
+    """
+}
+
+service_choices = list(service_descriptions.keys())
+
+# Create embeddings for our choices description
+choice_embeddings = np.array([
+    embed(description)
+    for description in service_descriptions.values()
+])
 
 # ----------------------------
 # WHISPER TRANSCRIPTION
@@ -41,14 +159,14 @@ def parse_intent(transcript: str):
     light_keywords = ["light", "lights", "lamp", "bulb"]
 
     if any(word in text for word in music_keywords):
-        intent["service"] = "music"
+        intent["service"] = service_choices[1]
     elif any(word in text for word in light_keywords):
-        intent["service"] = "lights"
+        intent["service"] = service_choices[0]
 
     # ----------------------------
     # MUSIC OPERATIONS
     # ----------------------------
-    if intent["service"] == "music":
+    if intent["service"] == service_choices[1]:
 
         if any(word in text for word in ["stop", "end", "shut"]):
             intent["operation"] = "stop"
@@ -59,7 +177,7 @@ def parse_intent(transcript: str):
     # ----------------------------
     # LIGHT OPERATIONS
     # ----------------------------
-    elif intent["service"] == "lights":
+    elif intent["service"] == service_choices[0]:
 
         if any(word in text for word in ["onn", "on", "turn on", "switch on"]):
             intent["operation"] = "turn_on"
@@ -68,6 +186,18 @@ def parse_intent(transcript: str):
             intent["operation"] = "turn_off"
 
     return intent
+
+def parse_intent_via_on_device_model(transcript: str):
+    # Embed user's sentence
+    query = embed(transcript)
+
+    # Calculate similarity bw user input(vector format) and avaliable choices
+    scores = choice_embeddings @ query
+
+    # Find best match
+    best = np.argmax(scores)
+
+    return service_choices[best]
 
 
 # ----------------------------
@@ -106,19 +236,32 @@ def voice():
         transcript = transcribe_audio(tmp.name)
         print("\nTranscript:", transcript)
 
-        # STEP 2: Rule-based intent parser
-        intent = parse_intent(transcript)
+        # STEP 2: intent parser
+        rule_based_intent = parse_intent(transcript)
+        model_based_intent = parse_intent_via_on_device_model(transcript)
 
         print("\n===== INTENT =====")
-        print(intent)
-        print("==================\n")
+        if rule_based_intent["service"] == model_based_intent:
+            print(rule_based_intent)
 
-        # STEP 3: Send to controller
-        send_to_controller(intent)
+            # STEP 3: Send to controller
+            send_to_controller(rule_based_intent)
+        else:
+            print("WARNING : Issues in parsing intent", flush=True)
+            print("Rule based intent :", rule_based_intent, flush=True)
+            print("Model based intent :", model_based_intent, flush=True)
+
+            return {
+                "error": "Intent classification disagreement",
+                "rule_based": rule_based_intent,
+                "model_based": model_based_intent
+            }, 400
+
+        print("==================\n")
 
     os.remove(tmp.name)
 
-    return intent
+    return rule_based_intent
 
 
 # ----------------------------
