@@ -142,7 +142,7 @@ def parse_operation_by_service(transcript: str, service: str):
     if intent["service"] == service_choices[1]:
         if any(word in text for word in ["stop", "end", "shut"]):
             intent["operation"] = "stop"
-        elif any(word in text for word in ["play", "start"]):
+        elif any(word in text for word in ["play", "start", "put on", "put onn"]):
             intent["operation"] = "play"
 
     elif intent["service"] == service_choices[0]:
