@@ -10,14 +10,8 @@ from transformers import AutoTokenizer
 
 app = Flask(__name__)
 
-# ----------------------------
-# LOAD WHISPER ONCE
-# ----------------------------
 model = whisper.load_model("base")
 
-# ----------------------------
-# Load ONNX model
-# ----------------------------
 onnx_model = ort.InferenceSession("minilm-onnx/model.onnx")
 # Load tokenizer
 tokenizer = AutoTokenizer.from_pretrained(
@@ -131,63 +125,35 @@ choice_embeddings = np.array([
     for description in service_descriptions.values()
 ])
 
-# ----------------------------
-# WHISPER TRANSCRIPTION
-# ----------------------------
 def transcribe_audio(file_path: str) -> str:
     result = model.transcribe(file_path)
     return result["text"].strip()
 
-
-# ----------------------------
-# RULE-BASED INTENT PARSER
-# ----------------------------
-def parse_intent(transcript: str):
+def parse_operation_by_service(transcript: str, service: str):
     text = transcript.lower().strip()
 
     intent = {
         "user_input": transcript,
         "operation": "unknown",
-        "service": "unknown",
+        "service": service,
         "parameter": None
     }
 
-    # ----------------------------
-    # SERVICE DETECTION
-    # ----------------------------
-    music_keywords = ["play", "song", "music", "track", "album", "listen", "put on", "play some", "listen to"]
-    light_keywords = ["light", "lights", "lamp", "bulb"]
-
-    if any(word in text for word in music_keywords):
-        intent["service"] = service_choices[1]
-    elif any(word in text for word in light_keywords):
-        intent["service"] = service_choices[0]
-
-    # ----------------------------
-    # MUSIC OPERATIONS
-    # ----------------------------
     if intent["service"] == service_choices[1]:
-
         if any(word in text for word in ["stop", "end", "shut"]):
             intent["operation"] = "stop"
-
         elif any(word in text for word in ["play", "start"]):
             intent["operation"] = "play"
 
-    # ----------------------------
-    # LIGHT OPERATIONS
-    # ----------------------------
     elif intent["service"] == service_choices[0]:
-
         if any(word in text for word in ["onn", "on", "turn on", "switch on"]):
             intent["operation"] = "turn_on"
-
         elif any(word in text for word in ["of", "off", "turn off", "switch off"]):
             intent["operation"] = "turn_off"
 
     return intent
 
-def parse_intent_via_on_device_model(transcript: str):
+def get_service_via_on_device_model(transcript: str):
     # Embed user's sentence
     query = embed(transcript)
 
@@ -197,14 +163,9 @@ def parse_intent_via_on_device_model(transcript: str):
     # Find best match
     best = np.argmax(scores)
 
-    return service_choices[best]
+    return service_choices[best] # returns service name e.g. "music", "lights" etc...
 
-
-# ----------------------------
-# SEND TO C CONTROLLER
-# ----------------------------
 def send_to_controller(data: dict):
-
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.connect(("127.0.0.1", 8080))
@@ -220,13 +181,8 @@ def send_to_controller(data: dict):
     except Exception as e:
         print("Failed to send to controller:", e)
 
-
-# ----------------------------
-# MAIN ENDPOINT
-# ----------------------------
 @app.route("/voice", methods=["POST"])
 def voice():
-
     audio = request.files["audio"]
 
     with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as tmp:
@@ -237,35 +193,25 @@ def voice():
         print("\nTranscript:", transcript)
 
         # STEP 2: intent parser
-        rule_based_intent = parse_intent(transcript)
-        model_based_intent = parse_intent_via_on_device_model(transcript)
+        service = get_service_via_on_device_model(transcript)
+        intent = parse_operation_by_service(transcript, service)
 
         print("\n===== INTENT =====")
-        if rule_based_intent["service"] == model_based_intent:
-            print(rule_based_intent)
-
+        if intent["operation"] != "unknown":
             # STEP 3: Send to controller
-            send_to_controller(rule_based_intent)
+            send_to_controller(intent)
         else:
-            print("WARNING : Issues in parsing intent", flush=True)
-            print("Rule based intent :", rule_based_intent, flush=True)
-            print("Model based intent :", model_based_intent, flush=True)
-
+            print("WARNING : Unable to parse intent", flush=True)
+            print(intent, flush=True)
             return {
-                "error": "Intent classification disagreement",
-                "rule_based": rule_based_intent,
-                "model_based": model_based_intent
+                "error": "Unable to parse intent"
             }, 400
 
         print("==================\n")
 
     os.remove(tmp.name)
 
-    return rule_based_intent
+    return intent
 
-
-# ----------------------------
-# RUN SERVER
-# ----------------------------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
