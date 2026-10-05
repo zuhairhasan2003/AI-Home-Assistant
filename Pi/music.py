@@ -11,20 +11,21 @@ import os
 def gemeni_api_req(raw_json):
 	client = genai.Client()
 
-	prompt = """ Identify the most likely real song from the input. The input may contain transcription errors, misheard lyrics, partial lyrics, or incorrect song/artist names.
+	prompt = """Identify or select a song based on the user's music request.
 	Return ONLY valid JSON:
-	{"song_name":string|null,"singer_name":string|null,"confidence":number}
+	{"song_name": string | null, "singer_name": string | null, "confidence": number}
+
 	Rules:
-	* ONLY PLAIN TEXT, NOTHING EXTRA, JUST JSON
-	* Return the official song title and artist name.
-	* Do NOT simply repeat names from the input; correct them if needed.
-	* Use lyrics, title fragments, phonetic similarity, and context to identify the song.
-	* If no reliable match exists, return null for song_name and singer_name.
-	* confidence must be 0-1 and reflect confidence in the match.
-	* No explanations or extra text.
-
-	IF the user asks you to pick a song, then please SUGGEST them the song
-
+	* ONLY JSON, no explanation or extra text.
+	* If the user requests a specific song, identify its official title and artist.
+	* If the user requests music by an artist, choose a suitable song by that artist.
+	* If the user requests a genre, choose a suitable well-known song from that genre.
+	* If the user requests a mood, choose a suitable song matching that mood.
+	* If the user asks for a recommendation or says "suggest some music", choose a suitable song based on the request.
+	* Do NOT return null simply because the user did not name a specific song.
+	* Return null only when there is not enough information to identify or reasonably select a song.
+	* Return the actual selected song title and artist in song_name and singer_name.
+	* confidence must be between 0 and 1.
 	Input: """ + raw_json['user_input']
 
 	response = client.models.generate_content(
