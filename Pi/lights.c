@@ -19,6 +19,7 @@ int main()
 
     printf("Connected to the server!!!\n");
 
+    // Chip 0 and gpio 5 (for Pi 5, that computes to pin 29)
     const char * chip_name = "gpiochip0";
     struct gpiod_chip * chip = gpiod_chip_open_by_name(chip_name);
     unsigned int pin_offset = 5;
@@ -33,19 +34,22 @@ int main()
         printf("%s\n", data);
 
         cJSON *parsed_json = cJSON_Parse(data);
+
         printf("\nDATA RECV :\n");
         printf("%s\n", cJSON_GetObjectItemCaseSensitive(parsed_json, "service")->valuestring);
         printf("%s\n", cJSON_GetObjectItemCaseSensitive(parsed_json, "operation")->valuestring);
         printf("%s\n", cJSON_GetObjectItemCaseSensitive(parsed_json, "user_input")->valuestring);
 
-        if(cJSON_GetObjectItemCaseSensitive(parsed_json, "operation")->valuestring == "turn_on")
+        if( strcmp(cJSON_GetObjectItemCaseSensitive(parsed_json, "operation")->valuestring, "turn_on") == 0 )
         {
             gpiod_line_set_value(line, 1);
         }
-        else if(cJSON_GetObjectItemCaseSensitive(parsed_json, "operation")->valuestring == "turn_off")
+        else if( strcmp(cJSON_GetObjectItemCaseSensitive(parsed_json, "operation")->valuestring, "turn_off") == 0 )
         {
             gpiod_line_set_value(line, 0);
         }
+
+        cJSON_Delete(parsed_json);
     }
 
     return 0;
