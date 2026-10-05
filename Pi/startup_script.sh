@@ -23,3 +23,14 @@ if [ $? -ne 0 ]; then
 fi
 nohup stdbuf -oL ./controller > /tmp/controller.log 2>&1 &
 echo "C controller pid : ${!}"
+
+sleep 1
+
+echo "Starting C light server..."
+gcc lights.c -o lights -lcjson -lgpiod
+if [ $? -ne 0 ]; then
+    echo "Light server compilation failed."
+    exit 1
+fi
+nohup stdbuf -oL ./lights > /tmp/lights.log 2>&1 &
+echo "Lights server pid : ${!}"
