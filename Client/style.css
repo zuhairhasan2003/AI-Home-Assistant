@@ -1,0 +1,52 @@
+body {
+    margin: 0;
+    height: 100vh;
+    background: #0b1220;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-family: sans-serif;
+}
+
+/* Center container */
+.container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+/* Big circle button */
+.mic {
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    background: #3b82f6;
+    box-shadow: 0 0 20px rgba(59,130,246,0.6);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+/* Hover effect */
+.mic:hover {
+    transform: scale(1.05);
+}
+
+/* Recording state (red pulse) */
+.mic.recording {
+    background: #ef4444;
+    box-shadow: 0 0 25px rgba(239,68,68,0.8);
+    animation: pulse 1s infinite;
+}
+
+/* Pulse animation */
+@keyframes pulse {
+    0% {
+        box-shadow: 0 0 10px rgba(239,68,68,0.5);
+    }
+    50% {
+        box-shadow: 0 0 30px rgba(239,68,68,1);
+    }
+    100% {
+        box-shadow: 0 0 10px rgba(239,68,68,0.5);
+    }
+}

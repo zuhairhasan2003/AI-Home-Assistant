@@ -181,6 +181,7 @@ def send_to_controller(data: dict):
     except Exception as e:
         print("Failed to send to controller:", e)
 
+@app.route("/", methods=["POST"])
 @app.route("/voice", methods=["POST"])
 def voice():
     audio = request.files["audio"]
